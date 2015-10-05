@@ -56,6 +56,8 @@ public class ElectionNode implements Runnable{
 	private Vector<Peer> peers;
 	private int numberPeers;
 	
+	private int messageCount = 0;
+	
 	public ElectionNode() throws IOException{
 		this(DEFAULT_LISTEN_PORT);
 	}
@@ -74,6 +76,7 @@ public class ElectionNode implements Runnable{
 	}
 
 	public void startElection(int count) {
+		System.out.println("Starting Election...");
 		this.electionPower = 1;
 		this.electing = true;
 		this.numberPeers = count;
@@ -92,6 +95,7 @@ public class ElectionNode implements Runnable{
 
 	public void completeElection() {
 		this.electing = false;
+		this.control.annouceMessages();
 	}
 	
 	public synchronized boolean Elect(Peer p){
@@ -154,9 +158,11 @@ public class ElectionNode implements Runnable{
 
 	@Override
 	public void run() {
+		System.out.println("Node Connecting...");
 		try {
 			Socket c;
 			while(this.serverSocket != null && (c = this.serverSocket.accept()) != null){
+				System.out.println("Node: New Peer");
 				this.peers.add(new Peer(this,c));
 			}
 		} catch (IOException e) {
@@ -179,27 +185,33 @@ public class ElectionNode implements Runnable{
 			this.thread.start();
 		}
 
+		public void annouceMessages() {
+			this.out.println("MESSAGE_COUNT " + messageCount);
+		}
+
 		@Override
 		public void run() {
 			try {
+				this.out.println(parent.serverSocket.getLocalPort());
 				BufferedReader br = new BufferedReader(new InputStreamReader(this.socket.getInputStream()));
 				String line;
 				while((line = br.readLine()) != null){
 					String[] words = line.split(" ");
+					System.out.println("Test");
 					if(words.length > 0){
 						continue;
-					}
+					}	
 					switch (words[0]){
 					case "START":
 						int power = Integer.parseInt(words[1]);
 						this.parent.startElection(power);
 						break;
-					case "CONNECT":
+					case "PEER":
 						String host = words[1];
 						int port = Integer.parseInt(words[2]);
 						this.parent.connect(host, port);
 						break;
-					case "COMPLETTED":
+					case "STOP":
 						this.parent.completeElection();
 						break;
 					}
@@ -239,7 +251,7 @@ public class ElectionNode implements Runnable{
 			this.parent = parent;
 			this.socket = s;
 			
-			this.out = new PrintWriter(this.socket.getOutputStream());
+			this.out = new PrintWriter(this.socket.getOutputStream(), true);
 			
 			this.thread = new Thread(this);
 			this.thread.start();
@@ -272,10 +284,12 @@ public class ElectionNode implements Runnable{
 
 			try {
 				BufferedReader br = new BufferedReader(new InputStreamReader(this.socket.getInputStream()));
-				String hostString = br.readLine();
-				String[] hostP = hostString.split(" ");
-				this.host = hostP[0];
-				this.port = Integer.parseInt(hostP[1]);
+
+				String portString = br.readLine();
+				
+				String host = this.socket.getRemoteSocketAddress().toString().substring(1);
+				this.host = host.substring(0, host.indexOf(':'));
+				this.port = Integer.parseInt(portString);
 				
 				String line;
 				while((line = br.readLine()) != null){
@@ -305,12 +319,13 @@ public class ElectionNode implements Runnable{
 					}
 				}
 			} catch (IOException e) {
-				e.printStackTrace();
+				peers.remove(this);
 			}
 		}
 		
 		public void passMessage(String msg){
 			if(this.out != null){
+				messageCount++;
 				this.out.println(msg);
 			}
 		}
